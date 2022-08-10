@@ -1,7 +1,7 @@
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
-
+from pprint import pprint
 import logging
 logging.basicConfig(level=logging.INFO,
                     format='[%(asctime)s] [%(levelname)s] - %(message)s')
@@ -101,7 +101,7 @@ class GithubProfileScraper:
                 commit_matrix_data.append(commit_data)
         return commit_matrix_data
 
-    def scrape(self, username: str) -> dict:
+    def scrape_user_data(self, username: str) -> dict:
         '''scrapes github user data and return data as dictionary'''
 
         page_source = self.get_page_source_soup(
@@ -154,7 +154,78 @@ class GithubProfileScraper:
         # get repo details
         details['pinnedrepos'] = self.get_pinned_items(page_source)
 
+        # followers list
+        details['followers_list'] = self.get_user_followers_list(username)
+
         return details
+
+    def get_user_followers_list(self, username: str) -> list:
+        '''returns followers list'''
+        # logging.info(f'Fetching {username} followers list')
+        followers_list = list()
+        page_no = 1
+
+        while True:
+            followers = self.___get_user_followers_list_per_page(
+                username, page_no)
+            if len(followers) == 0:
+                break
+            else:
+                page_no += 1
+                followers_list += followers
+                # print(f'\r{page_no}\t{len(followers)}\t{len(followers_list)}', end='')
+
+        return followers_list
+
+    def ___get_user_followers_list_per_page(self, username: str, page_no: int = 1):
+        '''returns followers list for the specified page'''
+        page_source = self.get_page_source_soup(
+            f'http://github.com/{username}?page={page_no}&tab=followers')
+        users_card = page_source.find_all('a', {'data-hovercard-type': 'user'})
+        # is_next_page = False if "That’s it. You’ve reached the end of\n" in page_source.text or "isn’t following anybody\n" in page_source.text else True
+
+        followers_list = list()
+        for user_card in users_card:
+            username = user_card.get('href').removeprefix('/')
+            if username not in followers_list:
+                followers_list.append(username)
+
+        return followers_list
+
+
+    # TODO: fix sign in bug by changing link
+    # def get_user_following_list(self, username: str) -> list:
+    #     '''returns following list'''
+    #     # logging.info(f'Fetching {username} followers list')
+    #     following_list = list()
+    #     page_no = 1
+
+    #     while True:
+    #         followings = self.___get_user_following_list_per_page(
+    #             username, page_no)
+    #         if len(followings) == 0:
+    #             break
+    #         else:
+    #             page_no += 1
+    #             following_list += followings
+    #             print(
+    #                 f'\r{page_no}\t{len(followings)}\t{len(following_list)}', end='')
+
+    #     return following_list
+
+    # def ___get_user_following_list_per_page(self, username: str, page_no: int = 1):
+    #     '''returns following list for specified page'''
+    #     page_source = self.get_page_source_soup(
+    #         f'https://github.com/{username}?page={page_no}&tab=following')
+    #     users_card = page_source.find_all('a', {'data-hovercard-type': 'user'})
+    #     self.driver.get_screenshot_as_file('sc.png')
+    #     following_list = list()
+    #     for user_card in users_card:
+    #         username = user_card.get('href').removeprefix('/')
+    #         if username not in following_list:
+    #             following_list.append(username)
+    #     pprint(following_list)
+    #     return following_list
 
     def __del__(self):
         self.driver.quit()
