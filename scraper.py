@@ -35,7 +35,7 @@ class GithubProfileScraper:
         soup = BeautifulSoup(self.driver.page_source, 'html.parser')
         return soup
 
-    def __find_value(self, source: BeautifulSoup, name: str, attrs: dict, find_all: bool = False):
+    def __find_value(self, source: BeautifulSoup, name: str, attrs: dict = None, find_all: bool = False):
         '''extracts data from the soup object'''
         if find_all:
             res = source.find_all(name, attrs)
@@ -55,6 +55,10 @@ class GithubProfileScraper:
         cards = list()
         for repo in pinned_repos_list:
             card = dict()
+
+            # pinned card basic details
+            url = repo.find('a').get('href')
+            card['url'] = url if url else None
             card['name'] = self.__find_value(repo, 'span', {'class': 'repo'})
             card['desc'] = self.__find_value(
                 repo, 'p', {'class': 'pinned-item-desc'})
@@ -75,6 +79,27 @@ class GithubProfileScraper:
             cards.append(card)
 
         return cards
+
+    def __get_contribution_graph(self, page_source: BeautifulSoup):
+        graph_svg_data = page_source.find(
+            'svg', {'class': 'js-calendar-graph-svg'}).find('g').find_all('g')
+        commit_matrix_data = list()
+        for g in graph_svg_data:
+            rects = g.find_all('rect')
+            for rect in rects:
+                commit_data = {
+                    'date': rect.get('data-date'),
+                    'count': rect.get('data-count'),
+                    'level': rect.get('data-level'),
+                    'height': rect.get('height'),
+                    'width': rect.get('width'),
+                    'rx': rect.get('rx'),
+                    'ry': rect.get('ry'),
+                    'x': rect.get('x'),
+                    'y': rect.get('y'),
+                }
+                commit_matrix_data.append(commit_data)
+        return commit_matrix_data
 
     def scrape(self, username: str) -> dict:
         '''scrapes github user data and return data as dictionary'''
@@ -117,6 +142,14 @@ class GithubProfileScraper:
             page_source, 'packages')
         details['starred'] = self.__get_data_tab_item_count(
             page_source, 'stars')
+
+        # contributions
+        contributions = self.__find_value(
+            page_source, 'div', {'class': 'js-yearly-contributions'})
+        details['contribs'] = contributions.replace(
+            '\n', '').split(' ')[0] if contributions else None
+        details['contrib_matrix'] = self.__get_contribution_graph(
+            page_source)
 
         # get repo details
         details['pinnedrepos'] = self.get_pinned_items(page_source)
