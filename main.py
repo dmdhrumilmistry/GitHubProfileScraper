@@ -13,10 +13,8 @@ for username in usernames:
     # user_followers = scraper.get_user_followers_list(username)
     # pprint(user_followers)
 
-    # user_following = scraper.get_user_following_list(usernames)
+    # user_following = scraper.get_user_following_list(username)
     # pprint(user_following)
-    # print(len(user_following))
-
     print('-'*40)
 
 del scraper

@@ -162,3 +162,5 @@ cython_debug/
 
 
 geckodriver.log
+temp.txt
+*.png
