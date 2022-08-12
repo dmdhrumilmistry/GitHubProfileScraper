@@ -1,4 +1,5 @@
-from bs4 import BeautifulSoup
+from pprint import pprint
+from bs4 import BeautifulSoup, ResultSet
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from urllib.parse import urljoin
@@ -29,6 +30,10 @@ class GithubProfileScraper:
         # initialize headless firefox
         self.driver = webdriver.Firefox(options=options)
         logging.info("Headless Firefox Initialized")
+
+    def __del__(self):
+        self.driver.quit()
+        logging.info("Headless Firefox Closed")
 
     def get_page_source_soup(self, url: str):
         '''loads page and returns BeautifulSoup object'''
@@ -147,7 +152,8 @@ class GithubProfileScraper:
             page_source, 'packages')
         details['starred_repos_count'] = self.__get_data_tab_item_count(
             page_source, 'stars')
-        details['starred_repos_list'] = self.get_user_starred_repos_list(username)
+        details['starred_repos_list'] = self.get_user_starred_repos_list(
+            username)
 
         # contributions
         contributions = self.__find_value(
@@ -269,7 +275,7 @@ class GithubProfileScraper:
             repo_details = dict()
 
             # extract repo details and add it to the list
-            url = urljoin('https://github.com',
+            url = urljoin('https://github.com/',
                           repo_card.find('a').get('href'))
             repo_details['url'] = url
             repo_details['name'] = url.split('/')[-1]
@@ -286,6 +292,97 @@ class GithubProfileScraper:
 
         return (repos_list, btn_link)
 
-    def __del__(self):
-        self.driver.quit()
-        logging.info("Headless Firefox Closed")
+    def get_user_repo_details(self, username: str) -> list:
+        '''returns user repo details list'''
+        logging.info(f'Fetching {username} repo details list')
+
+        repo_details = list()
+        page_no = 1
+
+        while True:
+            page_repos = self.___get_user_repo_details_list(username, page_no)
+            if len(page_repos) == 0:
+                break
+            else:
+                page_no += 1
+                repo_details += page_repos
+
+        return repo_details
+
+    def ___get_user_repo_details_list(self, username: str, page_no: int = 1) -> list:
+        '''returns user's repos list for specified page'''
+        page_source = self.get_page_source_soup(
+            f'http://github.com/{username}?page={page_no}&tab=repositories')
+
+        # extract repos div block
+        repos_block = page_source.find(id='user-repositories-list')
+
+        # check if page source indicates there are no more repos then return empty list
+        if 'doesn’t have any public repositories yet.\n' in page_source.text or not repos_block:
+            return []
+
+        repo_cards = repos_block.find_all('li')
+
+        repos_list = list()
+        for repo_card in repo_cards:
+            repo_details = dict()
+
+            # get name and url
+            repo_name: ResultSet = repo_card.find(
+                'a', {'itemprop': 'name codeRepository'})
+            repo_details['name'] = repo_name.text.replace('\n', '').strip()
+            repo_details['url'] = urljoin(
+                'https://github.com/', repo_name.get('href'))
+
+            # get latest updated time
+            updated_block = repo_card.find('relative-time')
+            repo_details['updated'] = None
+            if updated_block:
+                repo_details['updated'] = {
+                    'datetime': updated_block.get('datetime'),
+                    'string': updated_block.get('title')
+                }
+
+            # get topics
+            topics_block = repo_card.find_all(
+                'a', {'data-octo-click': 'topic_click'})
+            repo_details['topics'] = [topic.text.replace(
+                '\n', '').strip() for topic in topics_block]
+
+            # get description and language
+            repo_details['desc'] = self.__find_value(
+                repo_card, 'p', {'itemprop': 'description'})
+            repo_details['lang'] = self.__find_value(
+                repo_card, 'span', {'itemprop': 'programmingLanguage'})
+
+            # BUG: whenever it repeats it resets stars and forks to None, so only single value will be correct
+            # get stars and forks
+            stars = None
+            forks = None
+            for a_tag in repo_card.find_all('a'):
+                url = a_tag.get('href')
+                if url:
+                    value = a_tag.text.replace('\n', '').strip()
+                    keyword = url.split('/')[-1]
+                    if keyword == 'stargazers':
+                        stars = value
+                    elif keyword == 'members':
+                        forks = value
+
+            repo_details['stars'] = stars
+            repo_details['forks'] = forks
+
+            # get license
+            licen = None
+            span_blocks = repo_card.find_all('span', {'class': 'mr-3'})
+
+            for block in span_blocks:
+                if 'License' in block.text:
+                    licen = block.text.replace('\n', '').strip()
+
+            repo_details['license'] = licen
+
+            if repo_details not in repos_list:
+                repos_list.append(repo_details)
+
+        return repos_list
