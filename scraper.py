@@ -1,4 +1,3 @@
-from pprint import pprint
 from bs4 import BeautifulSoup, ResultSet
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
@@ -144,9 +143,10 @@ class GithubProfileScraper:
         details['twitter'] = twitter
 
         # get data tab items
-        details['repos'] = self.__get_data_tab_item_count(
+        details['repos_count'] = self.__get_data_tab_item_count(
             page_source, 'repositories')
-        details['projects'] = self.__get_data_tab_item_count(
+        details['repos'] = self.get_user_repo_details(username)
+        details['projects_count'] = self.__get_data_tab_item_count(
             page_source, 'projects')
         details['packages'] = self.__get_data_tab_item_count(
             page_source, 'packages')

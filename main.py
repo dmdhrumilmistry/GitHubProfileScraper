@@ -1,16 +1,16 @@
 from scraper import GithubProfileScraper
-from pprint import pprint
 from utils import write_json
 
 # install firefox geckodriver and add it to path
 scraper = GithubProfileScraper()
 
+
 usernames = ['dmdhrumilmistry']
 
 data = dict()
 for username in usernames:
-    # user_details = scraper.scrape_user_data(username)
-    # pprint(user_details['starred_repos_list'])
+    user_details = scraper.scrape_user_data(username)
+    # pprint(user_details)
 
     # user_followers = scraper.get_user_followers_list(username)
     # pprint(user_followers)
@@ -22,10 +22,9 @@ for username in usernames:
     # pprint(user_starred_repos)
     # print(len(user_starred_repos))
 
-    user_repo_details = scraper.get_user_repo_details(username)
-    data[username] = user_repo_details
+    # user_repo_details = scraper.get_user_repo_details(username)
+    data[username] = user_details
     print('-'*40)
-
 
 write_json('scraped_data.json', data)
 del scraper
