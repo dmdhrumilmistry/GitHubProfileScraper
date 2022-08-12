@@ -1,6 +1,8 @@
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
+from urllib.parse import urljoin
+
 import logging
 logging.basicConfig(level=logging.INFO,
                     format='[%(asctime)s] [%(levelname)s] - %(message)s')
@@ -143,8 +145,9 @@ class GithubProfileScraper:
             page_source, 'projects')
         details['packages'] = self.__get_data_tab_item_count(
             page_source, 'packages')
-        details['starred'] = self.__get_data_tab_item_count(
+        details['starred_repos_count'] = self.__get_data_tab_item_count(
             page_source, 'stars')
+        details['starred_repos_list'] = self.get_user_starred_repos_list(username)
 
         # contributions
         contributions = self.__find_value(
@@ -236,6 +239,52 @@ class GithubProfileScraper:
             if username not in following_list:
                 following_list.append(username)
         return following_list
+
+    def get_user_starred_repos_list(self, username: str):
+        '''returns list of user starred repo list'''
+        page_source = self.get_page_source_soup(
+            f'http://github.com/{username}?tab=stars')
+
+        starred_repos = list()
+        next_btn_link = True
+        while next_btn_link:
+            repos, next_btn_link = self.__get_user_stars_repos_list(
+                page_source)
+            starred_repos += repos
+
+            # visit new link if present
+            if next_btn_link:
+                page_source = self.get_page_source_soup(next_btn_link)
+
+        return starred_repos
+
+    def __get_user_stars_repos_list(self, page_source: BeautifulSoup) -> list:
+        # get starred repo block
+        stars_block = page_source.find(
+            'turbo-frame', {'id': 'user-starred-repos'})
+
+        # extract repo details
+        repos_list = list()
+        for repo_card in stars_block.find_all('h3'):
+            repo_details = dict()
+
+            # extract repo details and add it to the list
+            url = urljoin('https://github.com',
+                          repo_card.find('a').get('href'))
+            repo_details['url'] = url
+            repo_details['name'] = url.split('/')[-1]
+            repos_list.append(repo_details)
+
+        # check
+        btn_link = None
+        btn_group = page_source.find(
+            'div', {'class': 'BtnGroup', 'data-test-selector': 'pagination'})
+        if btn_group:
+            for btn in btn_group.find_all('a'):
+                if btn.text == 'Next':
+                    btn_link = btn.get('href')
+
+        return (repos_list, btn_link)
 
     def __del__(self):
         self.driver.quit()
