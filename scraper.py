@@ -1,7 +1,10 @@
+from platform import release
+from pprint import pprint
 from bs4 import BeautifulSoup, ResultSet
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from urllib.parse import urljoin
+from utils import sanitize_html_text
 
 import logging
 logging.basicConfig(level=logging.INFO,
@@ -355,14 +358,12 @@ class GithubProfileScraper:
             repo_details['lang'] = self.__find_value(
                 repo_card, 'span', {'itemprop': 'programmingLanguage'})
 
-            # BUG: whenever it repeats it resets stars and forks to None, so only single value will be correct
-            # get stars and forks
             stars = None
             forks = None
             for a_tag in repo_card.find_all('a'):
                 url = a_tag.get('href')
                 if url:
-                    value = a_tag.text.replace('\n', '').strip()
+                    value = sanitize_html_text(a_tag.text)
                     keyword = url.split('/')[-1]
                     if keyword == 'stargazers':
                         stars = value
@@ -378,7 +379,7 @@ class GithubProfileScraper:
 
             for block in span_blocks:
                 if 'License' in block.text:
-                    licen = block.text.replace('\n', '').strip()
+                    licen = sanitize_html_text(block.text)
 
             repo_details['license'] = licen
 
@@ -386,3 +387,105 @@ class GithubProfileScraper:
                 repos_list.append(repo_details)
 
         return repos_list
+
+    def get_repo_details(self, repo_url: str) -> dict:
+        '''returns repo details using repo url as dict'''
+        assert isinstance(repo_url, str)
+
+        page_source = self.get_page_source_soup(repo_url)
+
+        # create dict to store repo details
+        details = dict()
+        details['url'] = repo_url
+
+        # get about block
+        detail_blocks = page_source.find_all(
+            'div', {'class': 'BorderGrid-cell'})
+        about_block = detail_blocks[0]
+
+        # for about
+        details['desc'] = self.__find_value(
+            about_block, 'p', {'class': 'f4 my-3'})
+
+        # get topics
+        topics = []
+        for topic in about_block.find_all('a', {'class': 'topic-tag'}):
+            topic_name = sanitize_html_text(topic.text)
+            if topic_name not in topics:
+                topics.append(topic_name)
+
+        details['topics'] = topics
+
+        # get stars
+        stars = page_source.find(id='repo-stars-counter-star')
+        stars = sanitize_html_text(stars.text) if stars else None
+        details['stars'] = stars
+
+        # get forks
+        forks = page_source.find('span', id='repo-network-counter')
+        forks = sanitize_html_text(forks.text) if forks else None
+        details['forks'] = forks
+
+        # for license
+        lic = None
+        watchers = None
+        for a_tag in about_block.find_all('a', {'class': 'Link--muted'}):
+            a_tag_text = a_tag.text.lower()
+
+            if 'license' in a_tag_text:
+                lic = sanitize_html_text(a_tag.text)
+            if 'watching' in a_tag_text:
+                watchers = a_tag.find('strong')
+                watchers = sanitize_html_text(
+                    watchers.text) if watchers else None
+
+        details['license'] = lic
+        details['watchers'] = watchers
+
+        # get file navigation block to get branch count
+        branches = None
+        file_nav_block = page_source.find('div', {'class': 'file-navigation'})
+        branches_tag = file_nav_block.find(
+            'a', {'data-turbo-frame': 'repo-content-turbo-frame', 'class': 'Link--primary no-underline'})
+        if branches_tag and branches_tag.get('href').split('/')[-1] == 'branches':
+            branches = sanitize_html_text(branches_tag.find('strong').text)
+        details['branches'] = branches
+
+        # get releases and languages
+        releases = None
+        languages = None
+        for detail_block in detail_blocks:
+            # for releases
+            a_tag = detail_block.find('a')
+            if a_tag and 'Releases' in a_tag.text:
+                releases = a_tag.find(
+                    'span', {'class': 'Counter'})
+                releases = releases.get('title') if releases else None
+
+            # for languages
+            h2_tag = detail_block.find('h2')
+            if h2_tag and 'Languages' in h2_tag.text:
+                languages = list()
+                for lang_a_tag in detail_block.find_all('li', {'class': 'd-inline'}):
+                    span_tags = lang_a_tag.find_all('span')
+                    lang = sanitize_html_text(span_tags[0].text)
+                    percent = sanitize_html_text(span_tags[1].text)
+                    languages.append({'lang': lang, 'percent': percent})
+
+        details['releases'] = releases
+        details['languages'] = languages
+
+        # for commits
+        commits = None
+        box_div = page_source.find('div', {'class': 'Box-header'})
+        if box_div: 
+            for li_tag in box_div.find_all('li'):
+                a_tag = li_tag.find('a')
+                if 'commits' in a_tag.get('href').split('/'):
+                    commit_data = li_tag.find('strong')
+                    commits = sanitize_html_text(commit_data.text) if commit_data.text else None
+
+        details['commits'] = commits
+
+
+        return details

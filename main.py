@@ -1,3 +1,4 @@
+from pprint import pprint
 from scraper import GithubProfileScraper
 from utils import write_json
 
@@ -8,23 +9,16 @@ scraper = GithubProfileScraper()
 usernames = ['dmdhrumilmistry']
 
 data = dict()
-for username in usernames:
-    user_details = scraper.scrape_user_data(username)
-    # pprint(user_details)
+# for username in usernames:
+#     # user_details = scraper.scrape_user_data(username)
+    
+#     # data[username] = user_details
+#     print('-'*40)
 
-    # user_followers = scraper.get_user_followers_list(username)
-    # pprint(user_followers)
 
-    # user_following = scraper.get_user_following_list(username)
-    # pprint(user_following)
+repos = ['https://github.com/dmdhrumilmistry/pyhtools', 'https://github.com/dmdhrumilmistry/PyTerminalColor']
+for repo in repos:
+    pprint(scraper.get_repo_details(repo))
 
-    # user_starred_repos = scraper.get_user_starred_repos_list(username)
-    # pprint(user_starred_repos)
-    # print(len(user_starred_repos))
-
-    # user_repo_details = scraper.get_user_repo_details(username)
-    data[username] = user_details
-    print('-'*40)
-
-write_json('scraped_data.json', data)
+# write_json('scraped_data.json', data)
 del scraper
