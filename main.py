@@ -1,24 +1,29 @@
-from pprint import pprint
 from scraper import GithubProfileScraper
 from utils import write_json
 
-# install firefox geckodriver and add it to path
+# REQURIEMENT: install firefox geckodriver and add it to path
+
+# create obj
 scraper = GithubProfileScraper()
 
-
-usernames = ['dmdhrumilmistry']
-
+# for complete user data
 data = dict()
-# for username in usernames:
-#     # user_details = scraper.scrape_user_data(username)
-    
-#     # data[username] = user_details
-#     print('-'*40)
+usernames = ['dmdhrumilmistry']
+for username in usernames:
+    user_details = scraper.scrape_user_data(username)
+    data[username] = user_details
+    print('-'*40)
 
+# for repos data
+# data = dict()
+# repos = ['https://github.com/dmdhrumilmistry/pyhtools',
+#          'https://github.com/dmdhrumilmistry/PyTerminalColor', 'https://github.com/dmdhrumilmistry/PySafePass']
+# for repo in repos:
+#     name = repo.split('/')[-1]
+#     data[name] = scraper.get_repo_details(repo)
 
-repos = ['https://github.com/dmdhrumilmistry/pyhtools', 'https://github.com/dmdhrumilmistry/PyTerminalColor']
-for repo in repos:
-    pprint(scraper.get_repo_details(repo))
+# write data to a file
+write_json('scraped_data.json', data)
 
-# write_json('scraped_data.json', data)
+# delete obj
 del scraper

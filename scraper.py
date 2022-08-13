@@ -1,6 +1,4 @@
-from platform import release
-from pprint import pprint
-from bs4 import BeautifulSoup, ResultSet
+from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from urllib.parse import urljoin
@@ -280,6 +278,7 @@ class GithubProfileScraper:
             # extract repo details and add it to the list
             url = urljoin('https://github.com/',
                           repo_card.find('a').get('href'))
+
             repo_details['url'] = url
             repo_details['name'] = url.split('/')[-1]
             repos_list.append(repo_details)
@@ -328,61 +327,10 @@ class GithubProfileScraper:
 
         repos_list = list()
         for repo_card in repo_cards:
-            repo_details = dict()
+            repo_url = urljoin('https://github.com/', repo_card.find('a',
+                               {'itemprop': 'name codeRepository'}).get('href'))
 
-            # get name and url
-            repo_name: ResultSet = repo_card.find(
-                'a', {'itemprop': 'name codeRepository'})
-            repo_details['name'] = repo_name.text.replace('\n', '').strip()
-            repo_details['url'] = urljoin(
-                'https://github.com/', repo_name.get('href'))
-
-            # get latest updated time
-            updated_block = repo_card.find('relative-time')
-            repo_details['updated'] = None
-            if updated_block:
-                repo_details['updated'] = {
-                    'datetime': updated_block.get('datetime'),
-                    'string': updated_block.get('title')
-                }
-
-            # get topics
-            topics_block = repo_card.find_all(
-                'a', {'data-octo-click': 'topic_click'})
-            repo_details['topics'] = [topic.text.replace(
-                '\n', '').strip() for topic in topics_block]
-
-            # get description and language
-            repo_details['desc'] = self.__find_value(
-                repo_card, 'p', {'itemprop': 'description'})
-            repo_details['lang'] = self.__find_value(
-                repo_card, 'span', {'itemprop': 'programmingLanguage'})
-
-            stars = None
-            forks = None
-            for a_tag in repo_card.find_all('a'):
-                url = a_tag.get('href')
-                if url:
-                    value = sanitize_html_text(a_tag.text)
-                    keyword = url.split('/')[-1]
-                    if keyword == 'stargazers':
-                        stars = value
-                    elif keyword == 'members':
-                        forks = value
-
-            repo_details['stars'] = stars
-            repo_details['forks'] = forks
-
-            # get license
-            licen = None
-            span_blocks = repo_card.find_all('span', {'class': 'mr-3'})
-
-            for block in span_blocks:
-                if 'License' in block.text:
-                    licen = sanitize_html_text(block.text)
-
-            repo_details['license'] = licen
-
+            repo_details = self.get_repo_details(repo_url)
             if repo_details not in repos_list:
                 repos_list.append(repo_details)
 
@@ -396,7 +344,21 @@ class GithubProfileScraper:
 
         # create dict to store repo details
         details = dict()
+
+        # add url
         details['url'] = repo_url
+
+        # get name
+        name_block = page_source.find('strong', {'itemprop': 'name'})
+        name = name_block.find('a') if name_block else None
+        name = sanitize_html_text(name.text) if name else None
+        details['name'] = name
+
+        # get author
+        author_block = page_source.find('span', {'itemprop': 'author'})
+        author = author_block.find('a') if author_block else None
+        author = sanitize_html_text(author.text) if author else None
+        details['author'] = author
 
         # get about block
         detail_blocks = page_source.find_all(
@@ -478,14 +440,24 @@ class GithubProfileScraper:
         # for commits
         commits = None
         box_div = page_source.find('div', {'class': 'Box-header'})
-        if box_div: 
+        if box_div:
             for li_tag in box_div.find_all('li'):
                 a_tag = li_tag.find('a')
                 if 'commits' in a_tag.get('href').split('/'):
                     commit_data = li_tag.find('strong')
-                    commits = sanitize_html_text(commit_data.text) if commit_data.text else None
+                    commits = sanitize_html_text(
+                        commit_data.text) if commit_data.text else None
 
         details['commits'] = commits
 
+        # for last commit time
+        updated_block = page_source.find('relative-time')
+        updated = None
+        if updated_block:
+            updated = {
+                'datetime': updated_block.get('datetime'),
+                'string': updated_block.get('title')
+            }
+        details['updated'] = updated
 
         return details
