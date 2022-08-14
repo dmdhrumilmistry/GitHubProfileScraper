@@ -35,7 +35,7 @@ class GithubProfileScraper:
         }
         res = req_get(url, headers=headers)
         soup = BeautifulSoup(res.text, 'html.parser')
-        
+
         # write html page to file for debugging purpose
         with open('last_visited_page.html', 'w', encoding='utf-8') as f:
             f.write(url + res.text)
@@ -201,7 +201,7 @@ class GithubProfileScraper:
             followers = self.___get_user_followers_list_per_page(
                 username, page_no)
             page_no += 1
-            
+
             if len(followers) == 0:
                 running_status = False
             else:
@@ -249,19 +249,40 @@ class GithubProfileScraper:
         '''returns following list'''
         logging.info(f'Fetching {username} following list')
         following_list = list()
-        page_no = 1
 
-        while True:
-            followings = list()
+        # for data extration
+        page_no = 1
+        running_status = True
+
+        def handle_thread():
+            '''handles threading for retrieving user followers list'''
+            nonlocal page_no
+            nonlocal following_list
+            nonlocal running_status
+
             followings = self.___get_user_following_list_per_page(
                 username, page_no)
+            page_no += 1
+
             if len(followings) == 0:
-                break
+                running_status = False
             else:
-                page_no += 1
-                following_list += followings
-                # print(
-                # f'\r{page_no}\t{len(followings)}\t{len(following_list)}', end='')
+                for following in followings:
+                    if following not in following_list:
+                        following_list.append(following)
+            # print(f'page_no:{page_no}\trunning:{running_status}\tfollowers on page:{len(followings)}\ttot followers:{len(following_list)}')
+
+        # handle threads
+        threads = list()
+        while running_status:
+            thread = ThreadHandler(target=handle_thread)
+            thread.start()
+            threads.append(thread)
+            sleep(0.2)
+
+         # wait until all threads are terminated
+        for thread in threads:
+            thread.join()
 
         return following_list
 
