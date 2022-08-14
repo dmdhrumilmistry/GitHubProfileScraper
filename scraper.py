@@ -1,8 +1,10 @@
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.firefox.options import Options
+# from selenium import webdriver
+# from selenium.webdriver.firefox.options import Options
+from time import sleep
+from requests import get as req_get
 from urllib.parse import urljoin
-from utils import sanitize_html_text
+from utils import sanitize_html_text, ThreadHandler
 
 import logging
 logging.basicConfig(level=logging.INFO,
@@ -10,35 +12,41 @@ logging.basicConfig(level=logging.INFO,
 
 
 class GithubProfileScraper:
-    def __init__(self) -> None:
-        # set options
-        options = Options()
-        options.headless = True
-        options.add_argument(
-            f'user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.83 Safari/537.36')
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument('--ignore-certificate-errors')
-        options.add_argument('--allow-running-insecure-content')
-        options.add_argument("--disable-extensions")
-        options.add_argument("--proxy-server='direct://'")
-        options.add_argument("--proxy-bypass-list=*")
-        options.add_argument("--start-maximized")
-        options.add_argument('--disable-gpu')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument('--no-sandbox')
-
-        # initialize headless firefox
-        self.driver = webdriver.Firefox(options=options)
-        logging.info("Headless Firefox Initialized")
-
-    def __del__(self):
-        self.driver.quit()
-        logging.info("Headless Firefox Closed")
+    '''class to scrape github user profile'''
 
     def get_page_source_soup(self, url: str):
         '''loads page and returns BeautifulSoup object'''
-        self.driver.get(url)
-        soup = BeautifulSoup(self.driver.page_source, 'html.parser')
+        headers = {
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'DNT': '1',
+            'Host': 'github.com',
+            'Origin': 'https://github.com',
+            'Pragma': 'no-cache',
+            'Referer': 'https://github.com/',
+            'Sec-Fetch-Dest': 'script',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Site': 'cross-site',
+            'TE': 'trailers',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0 Win64 x64 rv: 103.0) Gecko/20100101 Firefox/103.0',
+        }
+        res = req_get(url, headers=headers)
+        soup = BeautifulSoup(res.text, 'html.parser')
+        
+        # write html page to file for debugging purpose
+        with open('last_visited_page.html', 'w', encoding='utf-8') as f:
+            f.write(url + res.text)
+
+        # detect abuse detection page
+        # if detected try after 10s
+        if 'Whoa there!' in soup.text:
+            logging.warn('Abuse detection system triggered, trying after 20s')
+            sleep(20)
+            soup = self.get_page_source_soup(url)
+
         return soup
 
     def __find_value(self, source: BeautifulSoup, name: str, attrs: dict = None, find_all: bool = False):
@@ -115,7 +123,7 @@ class GithubProfileScraper:
         # start scraping info
         logging.info(f'Scraping data for GitHub username: {username}')
         page_source = self.get_page_source_soup(
-            f'http://github.com/{username}')
+            f'https://github.com/{username}')
 
         # get profile details
         details = dict()
@@ -179,17 +187,41 @@ class GithubProfileScraper:
         '''returns followers list'''
         logging.info(f'Fetching {username} followers list')
         followers_list = list()
-        page_no = 1
 
-        while True:
+        # for data extration
+        page_no = 1
+        running_status = True
+
+        def handle_thread():
+            '''handles threading for retrieving user followers list'''
+            nonlocal page_no
+            nonlocal followers_list
+            nonlocal running_status
+
             followers = self.___get_user_followers_list_per_page(
                 username, page_no)
+            page_no += 1
+            
             if len(followers) == 0:
-                break
+                running_status = False
             else:
-                page_no += 1
-                followers_list += followers
-                # print(f'\r{page_no}\t{len(followers)}\t{len(followers_list)}', end='')
+                for follower in followers:
+                    if follower not in followers_list:
+                        followers_list.append(follower)
+
+            # print(f'page_no:{page_no}\trunning:{running_status}\tfollowers on page:{len(followers)}\ttot followers:{len(followers_list)}')
+
+        # handle threads
+        threads = list()
+        while running_status:
+            thread = ThreadHandler(target=handle_thread)
+            thread.start()
+            threads.append(thread)
+            sleep(0.1)
+
+        # wait until all threads are terminated
+        for thread in threads:
+            thread.join()
 
         return followers_list
 
@@ -200,12 +232,16 @@ class GithubProfileScraper:
         users_card = page_source.find_all('a', {'data-hovercard-type': 'user'})
         # is_next_page = False if "That’s it. You’ve reached the end of\n" in page_source.text or "isn’t following anybody\n" in page_source.text else True
 
+        # create list to store followers
         followers_list = list()
-        for user_card in users_card:
-            username = user_card.get('href').removeprefix(
-                '/').replace('https://github.com/', '')
-            if username not in followers_list:
-                followers_list.append(username)
+
+        # if there are followers then add them to the list
+        if 'That’s it. You’ve reached the end of' not in page_source.text:
+            for user_card in users_card:
+                username = user_card.get('href').removeprefix(
+                    '/').replace('https://github.com/', '')
+                if username not in followers_list:
+                    followers_list.append(username)
 
         return followers_list
 
@@ -216,6 +252,7 @@ class GithubProfileScraper:
         page_no = 1
 
         while True:
+            followings = list()
             followings = self.___get_user_following_list_per_page(
                 username, page_no)
             if len(followings) == 0:
@@ -337,10 +374,14 @@ class GithubProfileScraper:
         return repos_list
 
     def get_repo_details(self, repo_url: str) -> dict:
-        '''returns repo details using repo url as dict'''
+        '''returns repo details using repo url as dict, if empty returns None'''
         assert isinstance(repo_url, str)
 
         page_source = self.get_page_source_soup(repo_url)
+
+        # if repo is empty return None
+        if 'This repository is empty' in page_source.text:
+            return None
 
         # create dict to store repo details
         details = dict()

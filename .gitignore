@@ -165,3 +165,5 @@ geckodriver.log
 temp.txt
 *.png
 *.json
+*.csv
+*.html
