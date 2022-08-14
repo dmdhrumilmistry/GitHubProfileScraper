@@ -1,5 +1,4 @@
 from bs4 import BeautifulSoup
-from pprint import pprint
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from urllib.parse import urljoin
