@@ -1,4 +1,5 @@
 from bs4 import BeautifulSoup
+from pprint import pprint
 from selenium import webdriver
 from selenium.webdriver.firefox.options import Options
 from urllib.parse import urljoin
@@ -424,15 +425,24 @@ class GithubProfileScraper:
                     'span', {'class': 'Counter'})
                 releases = releases.get('title') if releases else None
 
-            # for languages
+            # for languages and their pcs
             h2_tag = detail_block.find('h2')
             if h2_tag and 'Languages' in h2_tag.text:
                 languages = list()
                 for lang_a_tag in detail_block.find_all('li', {'class': 'd-inline'}):
                     span_tags = lang_a_tag.find_all('span')
-                    lang = sanitize_html_text(span_tags[0].text)
-                    percent = sanitize_html_text(span_tags[1].text)
-                    languages.append({'lang': lang, 'percent': percent})
+
+                    lang = None
+                    percent = None
+                    if len(span_tags) == 2:
+                        lang = sanitize_html_text(span_tags[0].text)
+                        percent = sanitize_html_text(span_tags[1].text)
+                    elif len(span_tags) == 3:
+                        lang = sanitize_html_text(span_tags[1].text)
+                        percent = sanitize_html_text(span_tags[2].text)
+
+                    if lang and percent:
+                        languages.append({'lang': lang, 'percent': percent})
 
         details['releases'] = releases
         details['languages'] = languages
