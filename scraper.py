@@ -1,8 +1,10 @@
+from threading import Thread
 from bs4 import BeautifulSoup
+from random import randint
+from requests import get as req_get
 # from selenium import webdriver
 # from selenium.webdriver.firefox.options import Options
 from time import sleep
-from requests import get as req_get
 from urllib.parse import urljoin
 from utils import sanitize_html_text, ThreadHandler
 
@@ -13,6 +15,11 @@ logging.basicConfig(level=logging.INFO,
 
 class GithubProfileScraper:
     '''class to scrape github user profile'''
+
+    def __init__(self, max_threads: int) -> None:
+        assert isinstance(max_threads, int)
+
+        self.max_threads = max_threads
 
     def get_page_source_soup(self, url: str):
         '''loads page and returns BeautifulSoup object'''
@@ -34,6 +41,12 @@ class GithubProfileScraper:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0 Win64 x64 rv: 103.0) Gecko/20100101 Firefox/103.0',
         }
         res = req_get(url, headers=headers)
+
+        # if error occurred or url doesn't exist then return None
+        if res.status_code in [404, 500, 501, 502]:
+            logging.info(f'{url} URL Not Found on the server')
+            return None
+
         soup = BeautifulSoup(res.text, 'html.parser')
 
         # write html page to file for debugging purpose
@@ -41,16 +54,21 @@ class GithubProfileScraper:
             f.write(url + res.text)
 
         # detect abuse detection page
-        # if detected try after 10s
+        # if detected try after waiting random amount of time
         if 'Whoa there!' in soup.text:
-            logging.warn('Abuse detection system triggered, trying after 20s')
-            sleep(20)
+            waiting_time = randint(10, 120)
+            logging.warn(
+                f'Abuse detection system triggered, trying after {waiting_time}s')
+            sleep(waiting_time)
             soup = self.get_page_source_soup(url)
 
         return soup
 
     def __find_value(self, source: BeautifulSoup, name: str, attrs: dict = None, find_all: bool = False):
         '''extracts data from the soup object'''
+        if not source:
+            return None
+
         if find_all:
             res = source.find_all(name, attrs)
             return res if len(res) > 0 else None
@@ -67,30 +85,31 @@ class GithubProfileScraper:
             page_source, 'div', {'class': 'pinned-item-list-item-content'}, find_all=True)
 
         cards = list()
-        for repo in pinned_repos_list:
-            card = dict()
+        if pinned_repos_list:
+            for repo in pinned_repos_list:
+                card = dict()
 
-            # pinned card basic details
-            url = repo.find('a').get('href')
-            card['url'] = url if url else None
-            card['name'] = self.__find_value(repo, 'span', {'class': 'repo'})
-            card['desc'] = self.__find_value(
-                repo, 'p', {'class': 'pinned-item-desc'})
-            card['lang'] = self.__find_value(
-                repo, 'span', {'itemprop': 'programmingLanguage'})
+                # pinned card basic details
+                url = repo.find('a').get('href')
+                card['url'] = url if url else None
+                card['name'] = self.__find_value(repo, 'span', {'class': 'repo'})
+                card['desc'] = self.__find_value(
+                    repo, 'p', {'class': 'pinned-item-desc'})
+                card['lang'] = self.__find_value(
+                    repo, 'span', {'itemprop': 'programmingLanguage'})
 
-            # get repo meta data
-            meta_data = self.__find_value(
-                repo, 'a', {'class': 'pinned-item-meta'}, find_all=True)
-            card['stars'] = None
-            card['forks'] = None
+                # get repo meta data
+                meta_data = self.__find_value(
+                    repo, 'a', {'class': 'pinned-item-meta'}, find_all=True)
+                card['stars'] = None
+                card['forks'] = None
 
-            if meta_data:
-                card['stars'] = meta_data[0].text.strip()
-            if meta_data and len(meta_data) > 1:
-                card['forks'] = meta_data[1].text.strip()
+                if meta_data:
+                    card['stars'] = meta_data[0].text.strip()
+                if meta_data and len(meta_data) > 1:
+                    card['forks'] = meta_data[1].text.strip()
 
-            cards.append(card)
+                cards.append(card)
 
         return cards
 
@@ -123,7 +142,10 @@ class GithubProfileScraper:
         # start scraping info
         logging.info(f'Scraping data for GitHub username: {username}')
         page_source = self.get_page_source_soup(
-            f'https://github.com/{username}')
+            f'http://github.com/{username}')
+
+        if not page_source:
+            return dict({'message':'user not found'})
 
         # get profile details
         details = dict()
@@ -141,10 +163,15 @@ class GithubProfileScraper:
         # get follower and followings
         interaction_list = self.__find_value(page_source, 'a', {
                                              'class': 'Link--secondary no-underline no-wrap'}, find_all=True)
-        details['followers'] = self.__find_value(
-            interaction_list[0], 'span', {'class': 'text-bold'})
-        details['following'] = self.__find_value(
-            interaction_list[1], 'span', {'class': 'text-bold'})
+        followers = None
+        followings = None
+        if interaction_list:
+            followers = self.__find_value(
+                interaction_list[0], 'span', {'class': 'text-bold'})
+            followings = self.__find_value(
+                interaction_list[1], 'span', {'class': 'text-bold'})
+        details['followers'] = followers
+        details['following'] = followings
 
         # get twitter acc
         twitter = self.__find_value(page_source, 'li', {'itemprop': 'twitter'})
@@ -154,7 +181,7 @@ class GithubProfileScraper:
         # get data tab items
         details['repos_count'] = self.__get_data_tab_item_count(
             page_source, 'repositories')
-        details['repos'] = self.get_user_repo_details(username)
+        details['repos'] = self.get_user_repos_list(username)
         details['projects_count'] = self.__get_data_tab_item_count(
             page_source, 'projects')
         details['packages'] = self.__get_data_tab_item_count(
@@ -214,9 +241,10 @@ class GithubProfileScraper:
         # handle threads
         threads = list()
         while running_status:
-            thread = ThreadHandler(target=handle_thread)
-            thread.start()
-            threads.append(thread)
+            if len(thread) < self.max_threads:
+                thread = ThreadHandler(target=handle_thread)
+                thread.start()
+                threads.append(thread)
             sleep(0.1)
 
         # wait until all threads are terminated
@@ -229,6 +257,12 @@ class GithubProfileScraper:
         '''returns followers list for the specified page'''
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=followers')
+
+
+        # page not found then return empty list
+        if not page_source:
+            return list()
+
         users_card = page_source.find_all('a', {'data-hovercard-type': 'user'})
         # is_next_page = False if "That’s it. You’ve reached the end of\n" in page_source.text or "isn’t following anybody\n" in page_source.text else True
 
@@ -255,7 +289,7 @@ class GithubProfileScraper:
         running_status = True
 
         def handle_thread():
-            '''handles threading for retrieving user followers list'''
+            '''handles threading for retrieving user following list'''
             nonlocal page_no
             nonlocal following_list
             nonlocal running_status
@@ -291,6 +325,10 @@ class GithubProfileScraper:
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=following')
 
+         # page not found then return empty list
+        if not page_source:
+            return list()
+
         # check if page source indicates user isn't following anyone then return empty list
         if 'isn’t following anybody.\n' in page_source.text:
             return []
@@ -309,6 +347,10 @@ class GithubProfileScraper:
         '''returns list of user starred repo list'''
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?tab=stars')
+
+        # page not found then return empty list
+        if not page_source:
+            return list()
 
         starred_repos = list()
         next_btn_link = True
@@ -334,8 +376,12 @@ class GithubProfileScraper:
             repo_details = dict()
 
             # extract repo details and add it to the list
-            url = urljoin('https://github.com/',
-                          repo_card.find('a').get('href'))
+            url = repo_card.find('a') if repo_card else None
+            url = urljoin('https://github.com/',url.get('href')) if url else None
+
+            # if url is absent continue to next iteration
+            if not url:
+                continue
 
             repo_details['url'] = url
             repo_details['name'] = url.split('/')[-1]
@@ -352,27 +398,63 @@ class GithubProfileScraper:
 
         return (repos_list, btn_link)
 
-    def get_user_repo_details(self, username: str) -> list:
-        '''returns user repo details list'''
-        logging.info(f'Fetching {username} repo details list')
+    def get_user_repos_list(self, username: str) -> list:
+        '''returns user's repos list'''
+        logging.info(f'Fetching repos list for {username}')
 
-        repo_details = list()
+        repos_list = list()
         page_no = 1
+        running_status = True
 
-        while True:
-            page_repos = self.___get_user_repo_details_list(username, page_no)
-            if len(page_repos) == 0:
-                break
+        def handle_repo_thread(username: str, page_no: int):
+            '''handles threading for retrieving user repos list'''
+            nonlocal repos_list
+            nonlocal running_status
+
+            repos = self.___get_user_repos_list(username, page_no)
+
+            if len(repos) == 0:
+                running_status = False
             else:
+                for repo in repos:
+                    if repo not in repos_list:
+                        repos_list.append(repo)
+
+            # print(
+            #     f'page_no:{page_no}\trunning:{running_status}\trepos on page:{len(repos)}\ttot repos:{len(repos_list)}')
+
+        # handle threads
+        threads = list()
+        while running_status:
+            # print(len(threads))
+            if len(threads) < self.max_threads:
+                # print('create thread')
+                thread = ThreadHandler(
+                    target=handle_repo_thread, args=(username, page_no,))
+                thread.start()
+                threads.append(thread)
                 page_no += 1
-                repo_details += page_repos
+            else:
+                # print('joining all threads')
+                # wait until all threads are terminated
+                for thread in threads:
+                    thread.join()
+                    del thread
+                sleep(0.3)
+            sleep(0.2)
 
-        return repo_details
+        return repos_list
 
-    def ___get_user_repo_details_list(self, username: str, page_no: int = 1) -> list:
+    def ___get_user_repos_list(self, username: str, page_no: int = 1) -> list:
         '''returns user's repos list for specified page'''
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=repositories')
+
+            
+        # page not found then return empty list
+        if not page_source:
+            return list()
+
 
         # extract repos div block
         repos_block = page_source.find(id='user-repositories-list')
@@ -388,7 +470,9 @@ class GithubProfileScraper:
             repo_url = urljoin('https://github.com/', repo_card.find('a',
                                {'itemprop': 'name codeRepository'}).get('href'))
 
-            repo_details = self.get_repo_details(repo_url)
+            # TODO: uncomment below line
+            # repo_details = self.get_repo_details(repo_url)
+            repo_details = repo_url
             if repo_details not in repos_list:
                 repos_list.append(repo_details)
 
@@ -399,6 +483,10 @@ class GithubProfileScraper:
         assert isinstance(repo_url, str)
 
         page_source = self.get_page_source_soup(repo_url)
+
+        # page not found then return empty list
+        if not page_source:
+            return list()
 
         # if repo is empty return None
         if 'This repository is empty' in page_source.text:

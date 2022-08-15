@@ -2,14 +2,16 @@ from scraper import GithubProfileScraper
 from utils import write_json
 
 # create obj
-scraper = GithubProfileScraper()
+scraper = GithubProfileScraper(max_threads=5)
 
 # for complete user data uncomment below lines
 data = dict()
-usernames = ['dmdhrumilmistry']
+usernames = ['aryanc403', 'Swati4star', 'kovidgoyal', 'dmdhrumilmistry']
+# usernames = ['kovidgoyal']
 for username in usernames:
     # user_details = scraper.scrape_user_data(username)
-    user_details = scraper.get_user_following_list(username)
+    # user_details = scraper.get_user_following_list(username)
+    user_details = scraper.get_user_repos_list(username)
     data[username] = user_details
     
     print(len(user_details))
