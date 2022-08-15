@@ -14,10 +14,6 @@
   python3 -m pip install -r requirements.txt
   ```
 
-- Install [Firefox](https://www.mozilla.org/en-US/firefox/download/thanks/)
-
-- Download [geckodriver](https://github.com/mozilla/geckodriver/releases) and add it to path
-
 ## Usage
 
 - edit `main.py` file and add usernames to the list

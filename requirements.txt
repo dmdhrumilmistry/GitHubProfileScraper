@@ -1,2 +1,2 @@
 beautifulsoup4
-selenium # https://selenium-python.readthedocs.io/installation.html
+requests

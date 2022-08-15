@@ -161,7 +161,10 @@ cython_debug/
 #.idea/
 
 
-geckodriver.log
-temp.txt
 *.png
 *.json
+*.csv
+*.html
+*.log
+*.bak
+*temp*
