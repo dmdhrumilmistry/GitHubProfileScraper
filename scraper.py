@@ -288,9 +288,8 @@ class GithubProfileScraper:
         page_no = 1
         running_status = True
 
-        def handle_thread():
+        def handle_thread(username: str, page_no: int):
             '''handles threading for retrieving user following list'''
-            nonlocal page_no
             nonlocal following_list
             nonlocal running_status
 
@@ -309,9 +308,17 @@ class GithubProfileScraper:
         # handle threads
         threads = list()
         while running_status:
-            thread = ThreadHandler(target=handle_thread)
-            thread.start()
-            threads.append(thread)
+            if len(threads) < self.max_threads:
+                thread = ThreadHandler(target=handle_thread, args=(username, page_no,))
+                thread.start()
+                threads.append(thread)
+                page_no += 1
+            else:
+                # wait until all threads are terminated
+                for thread in threads:
+                    thread.join()
+                    del thread
+                sleep(0.3)
             sleep(0.2)
 
          # wait until all threads are terminated
