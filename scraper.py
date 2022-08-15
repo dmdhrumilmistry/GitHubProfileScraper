@@ -92,7 +92,8 @@ class GithubProfileScraper:
                 # pinned card basic details
                 url = repo.find('a').get('href')
                 card['url'] = url if url else None
-                card['name'] = self.__find_value(repo, 'span', {'class': 'repo'})
+                card['name'] = self.__find_value(
+                    repo, 'span', {'class': 'repo'})
                 card['desc'] = self.__find_value(
                     repo, 'p', {'class': 'pinned-item-desc'})
                 card['lang'] = self.__find_value(
@@ -145,7 +146,7 @@ class GithubProfileScraper:
             f'http://github.com/{username}')
 
         if not page_source:
-            return dict({'message':'user not found'})
+            return dict({'message': 'user not found'})
 
         # get profile details
         details = dict()
@@ -258,7 +259,6 @@ class GithubProfileScraper:
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=followers')
 
-
         # page not found then return empty list
         if not page_source:
             return list()
@@ -309,7 +309,8 @@ class GithubProfileScraper:
         threads = list()
         while running_status:
             if len(threads) < self.max_threads:
-                thread = ThreadHandler(target=handle_thread, args=(username, page_no,))
+                thread = ThreadHandler(
+                    target=handle_thread, args=(username, page_no,))
                 thread.start()
                 threads.append(thread)
                 page_no += 1
@@ -332,7 +333,7 @@ class GithubProfileScraper:
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=following')
 
-         # page not found then return empty list
+        # page not found then return empty list
         if not page_source:
             return list()
 
@@ -384,7 +385,8 @@ class GithubProfileScraper:
 
             # extract repo details and add it to the list
             url = repo_card.find('a') if repo_card else None
-            url = urljoin('https://github.com/',url.get('href')) if url else None
+            url = urljoin('https://github.com/',
+                          url.get('href')) if url else None
 
             # if url is absent continue to next iteration
             if not url:
@@ -457,11 +459,9 @@ class GithubProfileScraper:
         page_source = self.get_page_source_soup(
             f'http://github.com/{username}?page={page_no}&tab=repositories')
 
-            
         # page not found then return empty list
         if not page_source:
             return list()
-
 
         # extract repos div block
         repos_block = page_source.find(id='user-repositories-list')
@@ -504,6 +504,10 @@ class GithubProfileScraper:
 
         # add url
         details['url'] = repo_url
+
+        # check whether repo is forked
+        details['is_fork'] = True if page_source.find(
+            'svg', {'class': 'octicon octicon-repo-forked color-fg-muted mr-2'}) else False
 
         # get name
         name_block = page_source.find('strong', {'itemprop': 'name'})
