@@ -5,6 +5,7 @@ from random import randint
 
 # path to file containing username with each
 username_file = 'usernames.txt'
+proxy_file = 'proxy.json'
 
 # read usernames file containting GitHub usernames on each line
 assert isfile(username_file)
@@ -18,7 +19,10 @@ offset = randint(5, 10)
 usernames = usernames[base_num:base_num+offset]
 
 # create obj
-scraper = GithubProfileScraper(max_threads=5)
+scraper = GithubProfileScraper(
+    max_threads=5,
+    proxy_json_file=proxy_file
+)
 
 # scrape data
 data = dict()
