@@ -1,5 +1,7 @@
 # GithubProfileScraper
 
+A python tool for scraping Github User Profiles and storing scraped data in json format
+
 ## Installation
 
 - clone repo
@@ -16,14 +18,12 @@
 
 ## Usage
 
-- edit `main.py` file and add usernames to the list
-
-  ```python
-  usernames = ['userx00', 'userx01', ...]
-  ```
+- create `usernames.txt` file containing GitHub usernames on each line
 
 - run `main.py` file
 
   ```bash
   python3 main.py
   ```
+
+- View currently visited page by loading `last_visited_page.html` in browser

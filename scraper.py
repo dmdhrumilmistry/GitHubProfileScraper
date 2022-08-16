@@ -1,9 +1,6 @@
-from threading import Thread
 from bs4 import BeautifulSoup
 from random import randint
 from requests import get as req_get
-# from selenium import webdriver
-# from selenium.webdriver.firefox.options import Options
 from time import sleep
 from urllib.parse import urljoin
 from utils import sanitize_html_text, ThreadHandler
@@ -150,6 +147,7 @@ class GithubProfileScraper:
 
         # get profile details
         details = dict()
+        logging.info(f'Fetching {username} user profile details')
         details['name'] = self.__find_value(page_source, 'span', {
             'class': 'p-name vcard-fullname d-block overflow-hidden', 'itemprop': 'name'})
         details['username'] = self.__find_value(page_source, 'span', {
@@ -161,7 +159,17 @@ class GithubProfileScraper:
         details['website'] = self.__find_value(
             page_source, 'a', {'rel': 'nofollow me'})
 
+        # get twitter acc
+        twitter = self.__find_value(page_source, 'li', {'itemprop': 'twitter'})
+        twitter = twitter.replace('Twitter\n@', '') if twitter else None
+        details['twitter'] = twitter
+
+        # get repo details
+        details['pinnedrepos'] = self.get_pinned_items(page_source)
+
         # get follower and followings
+        logging.info(f'Fetching {username} user followers and followings count')
+
         interaction_list = self.__find_value(page_source, 'a', {
                                              'class': 'Link--secondary no-underline no-wrap'}, find_all=True)
         followers = None
@@ -174,12 +182,16 @@ class GithubProfileScraper:
         details['followers'] = followers
         details['following'] = followings
 
-        # get twitter acc
-        twitter = self.__find_value(page_source, 'li', {'itemprop': 'twitter'})
-        twitter = twitter.replace('Twitter\n@', '') if twitter else None
-        details['twitter'] = twitter
+         # followers list
+        # details['followers_list'] = self.get_user_followers_list(username)
+
+        # following list
+        # details['following_list'] = self.get_user_following_list(username)
+
 
         # get data tab items
+        logging.info(f'Fetching {username} user repo, project, and package details')
+
         details['repos_count'] = self.__get_data_tab_item_count(
             page_source, 'repositories')
         details['repos'] = self.get_user_repos_list(username)
@@ -193,21 +205,14 @@ class GithubProfileScraper:
             username)
 
         # contributions
+        logging.info(f'Fetching {username} user contribution details')
+
         contributions = self.__find_value(
             page_source, 'div', {'class': 'js-yearly-contributions'})
         details['contribs'] = contributions.replace(
             '\n', '').split(' ')[0] if contributions else None
         details['contrib_matrix'] = self.__get_contribution_graph(
             page_source)
-
-        # get repo details
-        details['pinnedrepos'] = self.get_pinned_items(page_source)
-
-        # followers list
-        details['followers_list'] = self.get_user_followers_list(username)
-
-        # following list
-        details['following_list'] = self.get_user_following_list(username)
 
         return details
 
@@ -242,15 +247,19 @@ class GithubProfileScraper:
         # handle threads
         threads = list()
         while running_status:
-            if len(thread) < self.max_threads:
+            if len(threads) < self.max_threads:
                 thread = ThreadHandler(target=handle_thread)
                 thread.start()
                 threads.append(thread)
+            else:
+                # wait until all threads are terminated
+                for thread in threads:
+                    thread.join()
+                    threads.remove(thread)
+                sleep(0.3)
             sleep(0.1)
 
-        # wait until all threads are terminated
-        for thread in threads:
-            thread.join()
+        
 
         return followers_list
 
@@ -318,7 +327,7 @@ class GithubProfileScraper:
                 # wait until all threads are terminated
                 for thread in threads:
                     thread.join()
-                    del thread
+                    threads.remove(thread)
                 sleep(0.3)
             sleep(0.2)
 
@@ -430,7 +439,7 @@ class GithubProfileScraper:
                         repos_list.append(repo)
 
             # print(
-            #     f'page_no:{page_no}\trunning:{running_status}\trepos on page:{len(repos)}\ttot repos:{len(repos_list)}')
+                # f'page_no:{page_no}\trunning:{running_status}\trepos on page:{len(repos)}\ttot repos:{len(repos_list)}')
 
         # handle threads
         threads = list()
@@ -448,11 +457,36 @@ class GithubProfileScraper:
                 # wait until all threads are terminated
                 for thread in threads:
                     thread.join()
-                    del thread
+                    threads.remove(thread)
                 sleep(0.3)
             sleep(0.2)
 
-        return repos_list
+        # fetch details for user repos
+        repo_details_list = list()
+        threads = list()
+
+        def get_repo_details(repo_url):
+            repo_details = self.get_repo_details(repo_url)
+
+            if repo_details not in repo_details_list:
+                repo_details_list.append(repo_details)
+
+        while repos_list:
+            if len(threads) < self.max_threads:
+                repo_url = repos_list.pop(0)
+                thread = ThreadHandler(
+                    target=get_repo_details, args=(repo_url,))
+                thread.start()
+                threads.append(thread)
+
+            else:
+                for thread in threads:
+                    thread.join()
+                    threads.remove(thread)
+                sleep(0.3)
+            sleep(0.2)
+
+        return repo_details_list
 
     def ___get_user_repos_list(self, username: str, page_no: int = 1) -> list:
         '''returns user's repos list for specified page'''
@@ -504,10 +538,6 @@ class GithubProfileScraper:
 
         # add url
         details['url'] = repo_url
-
-        # check whether repo is forked
-        details['is_fork'] = True if page_source.find(
-            'svg', {'class': 'octicon octicon-repo-forked color-fg-muted mr-2'}) else False
 
         # get name
         name_block = page_source.find('strong', {'itemprop': 'name'})

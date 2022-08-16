@@ -1,35 +1,33 @@
 from scraper import GithubProfileScraper
 from utils import write_json
+from os.path import isfile
+from random import randint
+
+# path to file containing username with each
+username_file = 'usernames.txt'
+
+# read usernames file containting GitHub usernames on each line
+assert isfile(username_file)
+usernames = []
+with open(username_file, 'r') as f:
+    usernames = f.read().split('\n')
+
+# scrape data for 5-10 random users
+base_num = randint(1, 2860)
+offset = randint(5, 10)
+usernames = usernames[base_num:base_num+offset]
 
 # create obj
 scraper = GithubProfileScraper(max_threads=5)
 
-# for complete user data uncomment below lines
-# data = dict()
-# usernames = ['aryanc403', 'Swati4star', 'kovidgoyal', 'dmdhrumilmistry']
-# usernames = ['kovidgoyal']
-# for username in usernames:
-    # user_details = scraper.scrape_user_data(username)
-    # user_details = scraper.get_user_following_list(username)
-    # user_details = scraper.get_user_repos_list(username)
-    # data[username] = user_details
-    
-    # print(len(user_details))
-    # print('-'*40)
-# end
-
-### for repo data uncomment below lines
+# scrape data
 data = dict()
-repos = [
-    'https://github.com/dmdhrumilmistry/pyhtools', # normal repo
-    # 'https://github.com/kgryte/abstract-ndarray', # empty repo
-    'https://github.com/damanskohli/2048', # forked repo
-]
+for username in usernames:
+    user_details = scraper.scrape_user_data(username)
+    data[username] = user_details
+    print('-'*40)
 
-for repo in repos:
-    name = repo.split('/')[-1]
-    data[name] = scraper.get_repo_details(repo)
-### end
+    # write data to a file
+    write_json('scraped_data.json', data)
 
-# write data to a file
-write_json('scraped_data.json', data)
+print(f'data scraped for {len(usernames)} users')
