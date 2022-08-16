@@ -4,6 +4,8 @@ from requests import get as req_get
 from time import sleep
 from urllib.parse import urljoin
 from utils import sanitize_html_text, ThreadHandler
+from os.path import isfile
+from json import JSONDecodeError, loads as load_json
 
 import logging
 logging.basicConfig(level=logging.INFO,
@@ -13,10 +15,41 @@ logging.basicConfig(level=logging.INFO,
 class GithubProfileScraper:
     '''class to scrape github user profile'''
 
-    def __init__(self, max_threads: int) -> None:
+    def __init__(self, max_threads: int, proxy_json_file:str = None) -> None:
         assert isinstance(max_threads, int)
-
         self.max_threads = max_threads
+
+        # load proxy config file if present
+        self.proxy_list = None
+        self.proxy_login = None
+        self.proxy_passwd = None
+        if proxy_json_file and isfile(proxy_json_file):
+            logging.info(f'Loading proxy config from {proxy_json_file}')
+            try:
+                with open(proxy_json_file, 'r') as f:
+                    proxy_config = load_json(f.read())
+                    self.proxy_login = proxy_config.get('login', None)
+                    self.proxy_passwd = proxy_config.get('password', None)
+                    self.proxy_list = proxy_config.get('proxies', None)
+                    logging.info(f'Proxies: {self.proxy_list}')
+            except JSONDecodeError:
+                logging.warning('Not using proxies. Config file should be in JSON format')
+
+    def rotating_proxy_request(self, url: str, **kwargs):
+        '''sends request using random proxy from the chain'''
+
+        while True:
+            try:
+                proxy_index = randint(0, len(self.proxy_list) - 1)
+                proxies = {
+                    'http': f'http://{self.proxy_login}:{self.proxy_passwd}@{self.proxy_list[proxy_index]}',
+                    'https': f'http://{self.proxy_login}:{self.proxy_passwd}@{self.proxy_list[proxy_index]}',
+                }
+                res = req_get(url, proxies=proxies, )
+                break
+            except Exception as e:
+                logging.warning('Request Failed! Choosing another proxy')
+        return res
 
     def get_page_source_soup(self, url: str):
         '''loads page and returns BeautifulSoup object'''
@@ -37,7 +70,10 @@ class GithubProfileScraper:
             'TE': 'trailers',
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0 Win64 x64 rv: 103.0) Gecko/20100101 Firefox/103.0',
         }
-        res = req_get(url, headers=headers)
+        if self.proxy_list and self.proxy_login and self.proxy_passwd:
+            res = self.rotating_proxy_request(url, headers=headers)
+        else:
+            res = req_get(url, headers=headers)
 
         # if error occurred or url doesn't exist then return None
         if res.status_code in [404, 500, 501, 502]:
@@ -168,7 +204,8 @@ class GithubProfileScraper:
         details['pinnedrepos'] = self.get_pinned_items(page_source)
 
         # get follower and followings
-        logging.info(f'Fetching {username} user followers and followings count')
+        logging.info(
+            f'Fetching {username} user followers and followings count')
 
         interaction_list = self.__find_value(page_source, 'a', {
                                              'class': 'Link--secondary no-underline no-wrap'}, find_all=True)
@@ -182,15 +219,15 @@ class GithubProfileScraper:
         details['followers'] = followers
         details['following'] = followings
 
-         # followers list
+        # followers list
         # details['followers_list'] = self.get_user_followers_list(username)
 
         # following list
         # details['following_list'] = self.get_user_following_list(username)
 
-
         # get data tab items
-        logging.info(f'Fetching {username} user repo, project, and package details')
+        logging.info(
+            f'Fetching {username} user repo, project, and package details')
 
         details['repos_count'] = self.__get_data_tab_item_count(
             page_source, 'repositories')
@@ -258,8 +295,6 @@ class GithubProfileScraper:
                     threads.remove(thread)
                 sleep(0.3)
             sleep(0.1)
-
-        
 
         return followers_list
 
