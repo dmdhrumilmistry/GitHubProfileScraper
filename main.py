@@ -14,9 +14,9 @@ with open(username_file, 'r') as f:
     usernames = f.read().split('\n')
 
 # scrape data for 5-10 random users
-base_num = randint(1, 2860)
-offset = randint(5, 10)
-usernames = usernames[base_num:base_num+offset]
+# base_num = randint(1, 2860)
+# offset = randint(5, 10)
+# usernames = usernames[base_num:base_num+offset]
 
 # create obj
 scraper = GithubProfileScraper(
